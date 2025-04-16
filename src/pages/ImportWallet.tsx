@@ -26,6 +26,7 @@ export default function ImportWallet() {
         } 
       });
     } catch (error) {
+      console.log(error)
       toast.error('Failed to import wallet. Please check your mnemonic phrase.');
     }
   };
