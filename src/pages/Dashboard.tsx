@@ -7,11 +7,7 @@ import { MdContentCopy } from "react-icons/md";
 import { toast } from 'sonner';
 import { storageUtils } from '../utils/storageUtils';
 import { HdPath, Slip10RawIndex } from "@cosmjs/crypto";
-
-const RPC = 'https://evmos-rpc.publicnode.com';
-const DENOM = 'atucc';
-const DISPLAY_DENOM = 'UCC';
-const LCD = 'http://145.223.80.193:1317';
+import { RPC_API_URL, DENOM, DISPLAY_DENOM, getBalance } from '../utils/apiUtils';
 
 // Define the HD path components for Ethereum-compatible path
 const ethereumPath: HdPath = [
@@ -21,13 +17,6 @@ const ethereumPath: HdPath = [
   Slip10RawIndex.normal(0),
   Slip10RawIndex.normal(0),
 ];
-
-interface BalanceResponse {
-  balances: Array<{
-    denom: string;
-    amount: string;
-  }>;
-}
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -84,13 +73,10 @@ export default function Dashboard() {
 
   const fetchBalance = async (addr: string) => {
     try {
-      const res = await fetch(`${LCD}/cosmos/bank/v1beta1/balances/${addr}`);
-      const data: BalanceResponse = await res.json();
-      const balanceObj = data.balances.find(b => b.denom === DENOM);
-      const amount = balanceObj ? (+balanceObj.amount / 1e18).toFixed(2) : '0';
+      const amount = await getBalance(addr);
       setBalance(amount);
     } catch (err) {
-      console.error('Failed to fetch balance via LCD:', err);
+      console.error('Failed to fetch balance:', err);
       toast.error('Error fetching balance. Please check your connection.');
     }
   };
@@ -112,12 +98,12 @@ export default function Dashboard() {
 
     try {
       const gasPrice = GasPrice.fromString("0.00001atucc");
-      const client = await SigningStargateClient.connectWithSigner(RPC, wallet, {
+      const client = await SigningStargateClient.connectWithSigner(RPC_API_URL, wallet, {
         gasPrice,
       });
 
       const amountToSend = {
-        denom: "atucc",
+        denom: DENOM,
         amount: (parseFloat(amount) * 1e18).toFixed(0),
       };
 
@@ -170,7 +156,7 @@ export default function Dashboard() {
         
         <div className="flex flex-col gap-2">
           <div className="flex justify-between items-center">
-            <span className="text-gray-600">Cosmos Address:</span>
+            <span className="text-gray-600">Ucc Address:</span>
             <div className="flex items-center gap-2">
               <span className="font-mono text-sm truncate max-w-[200px]">{address}</span>
               <button onClick={() => copyAddress('cosmos')} className="p-1 hover:bg-gray-100 rounded">
@@ -180,7 +166,7 @@ export default function Dashboard() {
           </div>
           
           <div className="flex justify-between items-center">
-            <span className="text-gray-600">Ethereum Address:</span>
+            <span className="text-gray-600">Public Address:</span>
             <div className="flex items-center gap-2">
               <span className="font-mono text-sm truncate max-w-[200px]">{ethAddress}</span>
               <button onClick={() => copyAddress('eth')} className="p-1 hover:bg-gray-100 rounded">
