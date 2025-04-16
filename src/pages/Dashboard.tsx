@@ -5,60 +5,88 @@ import { DirectSecp256k1HdWallet } from '@cosmjs/proto-signing';
 import QRCode from 'qrcode';
 import { MdContentCopy } from "react-icons/md";
 import { toast } from 'sonner';
+import { storageUtils } from '../utils/storageUtils';
+import { HdPath, Slip10RawIndex } from "@cosmjs/crypto";
 
 const RPC = 'https://evmos-rpc.publicnode.com';
 const DENOM = 'atucc';
 const DISPLAY_DENOM = 'UCC';
 const LCD = 'http://145.223.80.193:1317';
 
-interface LocationState {
-  wallet: DirectSecp256k1HdWallet;
-  address: string;
-  mnemonic: string;
+// Define the HD path components for Ethereum-compatible path
+const ethereumPath: HdPath = [
+  Slip10RawIndex.hardened(44),
+  Slip10RawIndex.hardened(60),
+  Slip10RawIndex.hardened(0),
+  Slip10RawIndex.normal(0),
+  Slip10RawIndex.normal(0),
+];
+
+interface BalanceResponse {
+  balances: Array<{
+    denom: string;
+    amount: string;
+  }>;
 }
 
 export default function Dashboard() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { wallet, address } = location.state as LocationState;
-
+  const [wallet, setWallet] = useState<DirectSecp256k1HdWallet | null>(null);
+  const [address, setAddress] = useState('');
+  const [ethAddress, setEthAddress] = useState('');
   const [balance, setBalance] = useState('0');
   const [qr, setQr] = useState('');
   const [to, setTo] = useState('');
   const [amount, setAmount] = useState('');
 
   useEffect(() => {
-    if (!wallet || !address) {
-      navigate('/');
-      return;
-    }
-    
-    fetchBalance(address);
-    generateQR(address);
+    const initializeWallet = async () => {
+      // Try to get wallet from storage
+      const storedWallet = storageUtils.getWallet();
+      if (!storedWallet) {
+        // If no wallet in storage, check location state
+        const locationState = location.state;
+        if (!locationState) {
+          navigate('/');
+          return;
+        }
+        // Save wallet from location state to storage
+        storageUtils.saveWallet(locationState);
+      }
 
-    // Handle back button
-    const handlePopState = () => {
-      const confirmExit = window.confirm('Are you sure you want to exit app?');
-      if (!confirmExit) {
-        history.pushState(null, '', window.location.href);
-      } else {
+      // Use either stored wallet or location state
+      const walletInfo = storedWallet || location.state;
+      
+      try {
+        // Initialize Cosmos wallet
+        const cosmosWallet = await DirectSecp256k1HdWallet.fromMnemonic(walletInfo.mnemonic, {
+          prefix: 'UCC',
+          hdPaths: [ethereumPath]
+        });
+        
+        setWallet(cosmosWallet);
+        setAddress(walletInfo.cosmosAddress);
+        setEthAddress(walletInfo.ethAddress);
+        
+        // Fetch balance and generate QR
+        await fetchBalance(walletInfo.cosmosAddress);
+        await generateQR(walletInfo.cosmosAddress);
+      } catch (error) {
+        console.error('Failed to initialize wallet:', error);
+        toast.error('Failed to initialize wallet. Please try again.');
         navigate('/');
       }
     };
 
-    window.addEventListener('popstate', handlePopState);
-    history.pushState(null, '', window.location.href);
-
-    return () => {
-      window.removeEventListener('popstate', handlePopState);
-    };
-  }, [wallet, address, navigate]);
+    initializeWallet();
+  }, [navigate, location]);
 
   const fetchBalance = async (addr: string) => {
     try {
       const res = await fetch(`${LCD}/cosmos/bank/v1beta1/balances/${addr}`);
-      const data = await res.json();
-      const balanceObj = data.balances.find((b: any) => b.denom === DENOM);
+      const data: BalanceResponse = await res.json();
+      const balanceObj = data.balances.find(b => b.denom === DENOM);
       const amount = balanceObj ? (+balanceObj.amount / 1e18).toFixed(2) : '0';
       setBalance(amount);
     } catch (err) {
@@ -102,20 +130,37 @@ export default function Dashboard() {
 
       toast.success(`Transaction sent! Hash: ${result.transactionHash}`);
       fetchBalance(address);
-    } catch (err: any) {
-      console.error("Send failed:", err);
-      toast.error(`Transaction failed: ${err.message || 'Unknown error'}`);
+    } catch (error) {
+      console.error("Send failed:", error);
+      toast.error(`Transaction failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
-  const copyAddress = () => {
-    navigator.clipboard.writeText(address);
-    toast.success("Address copied to clipboard!");
+  const copyAddress = (type: 'cosmos' | 'eth') => {
+    const addr = type === 'cosmos' ? address : ethAddress;
+    navigator.clipboard.writeText(addr);
+    toast.success(`${type === 'cosmos' ? 'Cosmos' : 'Ethereum'} address copied to clipboard!`);
+  };
+
+  const logout = () => {
+    const confirmed = window.confirm('Are you sure you want to logout? Make sure you have saved your mnemonic phrase!');
+    if (confirmed) {
+      storageUtils.clearWallet();
+      navigate('/');
+    }
   };
 
   return (
     <div className="flex flex-col gap-5 mx-auto shadow-md border-gray-500/30 border w-full md:w-[500px] rounded-md p-5 bg-gray-100">
-      <h2 className="text-2xl text-shadow-md font-bold text-slate-900">Your Wallet</h2>
+      <div className="flex justify-between items-center">
+        <h2 className="text-2xl text-shadow-md font-bold text-slate-900">Your Wallet</h2>
+        <button
+          onClick={logout}
+          className="px-4 py-2 bg-red-500 text-white rounded-md hover:bg-red-600 duration-200"
+        >
+          Logout
+        </button>
+      </div>
       
       <div className="bg-white rounded-lg p-4 shadow-sm">
         <div className="flex justify-between items-center mb-2">
@@ -123,13 +168,25 @@ export default function Dashboard() {
           <span className="font-bold">{balance} {DISPLAY_DENOM}</span>
         </div>
         
-        <div className="flex justify-between items-center">
-          <span className="text-gray-600">Address:</span>
-          <div className="flex items-center gap-2">
-            <span className="font-mono text-sm truncate max-w-[200px]">{address}</span>
-            <button onClick={copyAddress} className="p-1 hover:bg-gray-100 rounded">
-              <MdContentCopy size={18} />
-            </button>
+        <div className="flex flex-col gap-2">
+          <div className="flex justify-between items-center">
+            <span className="text-gray-600">Cosmos Address:</span>
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-sm truncate max-w-[200px]">{address}</span>
+              <button onClick={() => copyAddress('cosmos')} className="p-1 hover:bg-gray-100 rounded">
+                <MdContentCopy size={18} />
+              </button>
+            </div>
+          </div>
+          
+          <div className="flex justify-between items-center">
+            <span className="text-gray-600">Ethereum Address:</span>
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-sm truncate max-w-[200px]">{ethAddress}</span>
+              <button onClick={() => copyAddress('eth')} className="p-1 hover:bg-gray-100 rounded">
+                <MdContentCopy size={18} />
+              </button>
+            </div>
           </div>
         </div>
       </div>

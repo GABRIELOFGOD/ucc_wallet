@@ -3,11 +3,25 @@ import { useNavigate } from 'react-router-dom';
 import { MdContentCopy, MdOutlineFileDownload } from "react-icons/md";
 import { toast } from 'sonner';
 import { walletUtils, WalletInfo } from '../utils/walletUtils';
+import { storageUtils } from '../utils/storageUtils';
 
 export default function CreateWallet() {
   const navigate = useNavigate();
   const [walletInfo, setWalletInfo] = useState<WalletInfo | null>(null);
   const downloadRef = useRef<HTMLAnchorElement>(null);
+
+  useEffect(() => {
+    // Check if wallet already exists in storage
+    const storedWallet = storageUtils.getWallet();
+    if (storedWallet) {
+      // If wallet exists, redirect to dashboard
+      navigate('/dashboard');
+      return;
+    }
+
+    // Generate new wallet if none exists
+    generateWallet();
+  }, [navigate]);
 
   const generateWallet = async () => {
     try {
@@ -45,9 +59,16 @@ export default function CreateWallet() {
     toast.success("Mnemonic copied to clipboard!");
   };
 
-  useEffect(() => {
-    generateWallet();
-  }, []);
+  const proceedToConfirm = () => {
+    if (!walletInfo) return;
+    
+    // Save wallet info to storage before proceeding
+    if (storageUtils.saveWallet(walletInfo)) {
+      navigate('/confirm', { state: walletInfo });
+    } else {
+      toast.error('Failed to save wallet details. Please try again.');
+    }
+  };
 
   if (!walletInfo) {
     return (
@@ -91,7 +112,7 @@ export default function CreateWallet() {
         <a ref={downloadRef} style={{ display: 'none' }}>download</a>
       </div>
       <button 
-        onClick={() => navigate('/confirm', { state: walletInfo })} 
+        onClick={proceedToConfirm}
         className="bg-slate-900 text-white font-semibold py-2 rounded-md hover:bg-black duration-200 w-full mt-3 cursor-pointer"
       >
         Proceed
