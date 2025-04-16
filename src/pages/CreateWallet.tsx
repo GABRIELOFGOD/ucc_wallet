@@ -1,29 +1,29 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { DirectSecp256k1HdWallet } from '@cosmjs/proto-signing';
-import * as bip39 from 'bip39';
 import { MdContentCopy, MdOutlineFileDownload } from "react-icons/md";
 import { toast } from 'sonner';
+import { walletUtils, WalletInfo } from '../utils/walletUtils';
 
 export default function CreateWallet() {
   const navigate = useNavigate();
-  const [mnemonic, setMnemonic] = useState('');
-  const [wallet, setWallet] = useState<any>(null);
-  const [address, setAddress] = useState('');
+  const [walletInfo, setWalletInfo] = useState<WalletInfo | null>(null);
   const downloadRef = useRef<HTMLAnchorElement>(null);
 
   const generateWallet = async () => {
-    const mnemonic = bip39.generateMnemonic();
-    const wallet = await DirectSecp256k1HdWallet.fromMnemonic(mnemonic, { prefix: 'UCC' });
-    const [account] = await wallet.getAccounts();
-    setMnemonic(mnemonic);
-    setWallet(wallet);
-    setAddress(account.address);
+    try {
+      const newWallet = await walletUtils.generateWallet();
+      setWalletInfo(newWallet);
+    } catch (error) {
+      console.error('Failed to generate wallet:', error);
+      toast.error('Failed to generate wallet. Please try again.');
+    }
   };
 
   const downloadCSV = () => {
+    if (!walletInfo) return;
+    
     toast.loading("Downloading CSV...");
-    const words = mnemonic.split(' ');
+    const words = walletInfo.mnemonic.split(' ');
     let csvContent = 'Word #,Word\n';
     words.forEach((word, i) => {
       csvContent += `${i + 1},${word}\n`;
@@ -40,14 +40,22 @@ export default function CreateWallet() {
   };
 
   const copyPhrase = () => {
-    navigator.clipboard.writeText(mnemonic);
+    if (!walletInfo) return;
+    navigator.clipboard.writeText(walletInfo.mnemonic);
     toast.success("Mnemonic copied to clipboard!");
   };
 
-  // Generate wallet on component mount
-  useState(() => {
+  useEffect(() => {
     generateWallet();
   }, []);
+
+  if (!walletInfo) {
+    return (
+      <div className="flex flex-col gap-5 mx-auto shadow-md border-gray-500/30 border w-full md:w-[500px] rounded-md p-5 bg-gray-100">
+        <h2 className="text-2xl text-shadow-md font-bold text-slate-900">Generating Wallet...</h2>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-5 mx-auto shadow-md border-gray-500/30 border w-full md:w-[500px] rounded-md p-5 bg-gray-100">
@@ -56,8 +64,15 @@ export default function CreateWallet() {
         className="rounded-md border-2 border-slate-600 outline-none p-3 font-semibold" 
         rows={3} 
         readOnly 
-        value={mnemonic} 
+        value={walletInfo.mnemonic} 
       />
+      <div className="flex flex-col gap-2">
+        <p className="text-sm text-gray-600">Your addresses:</p>
+        <div className="bg-gray-50 p-2 rounded text-sm font-mono break-all">
+          <p><strong>Cosmos:</strong> {walletInfo.cosmosAddress}</p>
+          <p><strong>Ethereum:</strong> {walletInfo.ethAddress}</p>
+        </div>
+      </div>
       <div className="flex gap-3">
         <button 
           onClick={copyPhrase} 
@@ -76,7 +91,7 @@ export default function CreateWallet() {
         <a ref={downloadRef} style={{ display: 'none' }}>download</a>
       </div>
       <button 
-        onClick={() => navigate('/confirm', { state: { mnemonic, wallet, address } })} 
+        onClick={() => navigate('/confirm', { state: walletInfo })} 
         className="bg-slate-900 text-white font-semibold py-2 rounded-md hover:bg-black duration-200 w-full mt-3 cursor-pointer"
       >
         Proceed
