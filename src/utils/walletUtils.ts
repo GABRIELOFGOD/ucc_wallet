@@ -2,6 +2,7 @@ import { DirectSecp256k1HdWallet } from '@cosmjs/proto-signing';
 import { ethers } from 'ethers';
 import { bech32 } from 'bech32';
 import * as bip39 from 'bip39';
+import { HdPath, Slip10RawIndex } from "@cosmjs/crypto";
 
 export interface WalletInfo {
   cosmosAddress: string;    // UCC prefixed address
@@ -10,15 +11,24 @@ export interface WalletInfo {
   mnemonic: string;
 }
 
+// Define the HD path components for Ethereum-compatible path
+const ethereumPath: HdPath = [
+  Slip10RawIndex.hardened(44),
+  Slip10RawIndex.hardened(60),
+  Slip10RawIndex.hardened(0),
+  Slip10RawIndex.normal(0),
+  Slip10RawIndex.normal(0),
+];
+
 export const walletUtils = {
   generateWallet: async (): Promise<WalletInfo> => {
     // Generate mnemonic using BIP39
     const mnemonic = bip39.generateMnemonic(256); // Using 256 bits for extra security
     
-    // Create Cosmos wallet
+    // Create Cosmos wallet with Ethereum-compatible HD path
     const cosmosWallet = await DirectSecp256k1HdWallet.fromMnemonic(mnemonic, {
       prefix: 'UCC',
-      hdPaths: [ethers.utils.defaultPath] // Using Ethereum HD path for compatibility
+      hdPaths: [ethereumPath]
     });
     const [cosmosAccount] = await cosmosWallet.getAccounts();
     
@@ -40,7 +50,7 @@ export const walletUtils = {
 
     const cosmosWallet = await DirectSecp256k1HdWallet.fromMnemonic(mnemonic, {
       prefix: 'UCC',
-      hdPaths: [ethers.utils.defaultPath]
+      hdPaths: [ethereumPath]
     });
     const [cosmosAccount] = await cosmosWallet.getAccounts();
     
